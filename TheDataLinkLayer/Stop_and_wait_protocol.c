@@ -1,3 +1,9 @@
+/*	Stop-and-wait protocol also provides for a one-directional flow of data from sender to receiver.
+	The communication channel is once again assumed to be error free.However, this time the receiver has only
+	a finit buffer capacity and a finite processing speed, so the protocol must explicitly prevent the sender from flooding the
+	receiver with data faster than it can be handled.
+*/
+
 typedef enum {frame_arrival} event_type;
 
 #include "protocol.h"

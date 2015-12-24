@@ -1,3 +1,5 @@
+/*	PAR protocol allows unidirectional data flow over an unreliable channel.*/
+
 #define MAX_SEQ 1
 typedef enum {frame_arrival, cksum_err, timeout} event_type;
 #include "protocol.h"
