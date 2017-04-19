@@ -5,7 +5,20 @@
 #include <time.h>
 #include <pthread.h>
 #include "srt_client.h"
+#include <errno.h>
 
+int overlay_socket = 0;
+client_tcb_t *tcb_table[MAX_TRANSPORT_CONNECTIONS];
+pthread_mutex_t mutex;
+pthread_cond_t cond;
+
+// Send the seg SYN_MAX_RETRY times. If receive ack seg before timeout, then timer stop;
+// Return 1 if success otherwise return -1;
+int send_and_wait_ack(seg_t *seg, client_tcb_t *tcb, unsigned int expect_state);
+// Use the client port and server port number to identify a tcb in tcb_table.
+client_tcb_t *gettcb(int client_port, int server_port);
+// Check socket invalid.
+int check_sock(int sock_id);
 
 /*interfaces to application layer*/
 
@@ -23,11 +36,10 @@
 //  a switch statement (see the Lab4 assignment for an example). Typically, the FSM has to be
 // in a certain state determined by the design of the FSM to carry out a certain action.
 //
-//  GOAL: Your goal for this assignment is to design and implement the 
+//  GOAL: Your goal for this assignment is to design and implement the
 //  protoypes below - fill the code.
 //
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
 
 // srt client initialization
 //
@@ -40,7 +52,25 @@
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //
 
-void srt_client_init(int conn) {
+void srt_client_init(int conn)
+{
+  int i;
+  pthread_t thread_id;
+
+  for (i = 0; i < MAX_TRANSPORT_CONNECTIONS; i++)
+  {
+    tcb_table[i] = NULL;
+  }
+
+  overlay_socket = conn;
+
+  i = pthread_create(&thread_id, NULL, seghandler, NULL);
+
+  if (i != 0)
+  {
+    printf("Fail to create the seghandler thread!\n");
+    exit(0);
+  }
   return;
 }
 
@@ -56,8 +86,22 @@ void srt_client_init(int conn) {
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //
 
-int srt_client_sock(unsigned int client_port) {
-  return 0;
+int srt_client_sock(unsigned int client_port)
+{
+  int i;
+
+  for (i = 0; i < MAX_TRANSPORT_CONNECTIONS; i++)
+  {
+    if (tcb_table[i] == NULL)
+    {
+      tcb_table[i] = malloc(sizeof(client_tcb_t));
+      tcb_table[i]->state = CLOSED;
+      tcb_table[i]->client_portNum = client_port;
+      return i;
+    }
+  }
+
+  return -1;
 }
 
 // Connect to a srt server
@@ -73,9 +117,32 @@ int srt_client_sock(unsigned int client_port) {
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //
 
+int srt_client_connect(int sockfd, unsigned int server_port)
+{
+  if (check_sock(sockfd) == -1)
+  {
+    printf("Sockfd invalid\n");
+    return -1;
+  }
 
-int srt_client_connect(int sockfd, unsigned int server_port) {
-  return 0;
+  client_tcb_t *tcb;
+  seg_t seg;
+  int i;
+
+  tcb = tcb_table[sockfd];
+  tcb->svr_portNum = server_port;
+  tcb->state = SYNSENT;
+  seg.header.src_port = tcb->client_portNum;
+  seg.header.dest_port = tcb->svr_portNum;
+  seg.header.type = SYN;
+  seg.header.length = 0;
+
+  i = send_and_wait_ack(&seg, tcb, CONNECTED);
+
+  if (i == -1)
+    tcb->state = CLOSED;
+
+  return i;
 }
 
 // Send data to a srt server
@@ -86,8 +153,9 @@ int srt_client_connect(int sockfd, unsigned int server_port) {
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //
 
-int srt_client_send(int sockfd, void* data, unsigned int length) {
-	return 1;
+int srt_client_send(int sockfd, void *data, unsigned int length)
+{
+  return 1;
 }
 
 // Disconnect from a srt server
@@ -100,10 +168,30 @@ int srt_client_send(int sockfd, void* data, unsigned int length) {
 // if after a number of retries FIN_MAX_RETRY the state is still FINWAIT then
 // the state transitions to CLOSED and -1 is returned.
 
-int srt_client_disconnect(int sockfd) {
-  return 0;
-}
+int srt_client_disconnect(int sockfd)
+{
+  if (check_sock(sockfd) == -1)
+  {
+    printf("Sockfd invalid\n");
+    return -1;
+  }
 
+  client_tcb_t *tcb;
+  seg_t seg;
+  int i;
+
+  tcb = tcb_table[sockfd];
+  tcb->state = FINWAIT;
+  seg.header.src_port = tcb->client_portNum;
+  seg.header.dest_port = tcb->svr_portNum;
+  seg.header.type = FIN;
+  seg.header.length = 0;
+
+  i = send_and_wait_ack(&seg, tcb, CLOSED);
+
+  tcb->state = CLOSED;
+  return i;
+}
 
 // Close srt client
 
@@ -114,8 +202,26 @@ int srt_client_disconnect(int sockfd) {
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //
 
-int srt_client_close(int sockfd) {
-	return 0;
+int srt_client_close(int sockfd)
+{
+  if (check_sock(sockfd) == -1)
+  {
+    printf("Sockfd invalid\n");
+    return -1;
+  }
+
+  client_tcb_t *tcb;
+
+  tcb = tcb_table[sockfd];
+
+  if (tcb->state == CLOSED)
+  {
+    free(tcb);
+    tcb_table[sockfd] = NULL;
+    return 1;
+  }
+
+  return -1;
 }
 
 // The thread handles incoming segments
@@ -127,9 +233,109 @@ int srt_client_close(int sockfd) {
 // actions are taken. See the client FSM for more details.
 //
 
-void *seghandler(void* arg) {
+void *seghandler(void *arg)
+{
+  int i;
+  seg_t seg;
+  client_tcb_t *tcb;
+
+  while (snp_recvseg(overlay_socket, &seg) != -1)
+  {
+    tcb = gettcb(seg.header.dest_port, seg.header.src_port);
+    if (tcb == NULL)
+      continue;
+
+    switch (seg.header.type)
+    {
+    case SYNACK:
+      if (tcb->state == SYNSENT)
+      {
+        tcb->state = CONNECTED;
+        pthread_cond_broadcast(&cond);
+      }
+      break;
+    case FINACK:
+      if (tcb->state == FINWAIT)
+      {
+        tcb->state = CLOSED;
+        pthread_cond_broadcast(&cond);
+      }
+      break;
+    default:
+      break;
+    }
+  };
+
   return 0;
 }
 
+int send_and_wait_ack(seg_t *seg, client_tcb_t *tcb, unsigned int expect_state)
+{
+  int i, error;
 
+  i = 1;
+  while (i <= SYN_MAX_RETRY)
+  {
+    snp_sendseg(overlay_socket, seg);
 
+    pthread_mutex_lock(&mutex);
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += 1;
+    // ts.tv_nsec += SYNSEG_TIMEOUT_NS;
+    error = pthread_cond_timedwait(&cond, &mutex, &ts);
+    pthread_mutex_unlock(&mutex);
+
+    if (error == ETIMEDOUT)
+    {
+      i++;
+      continue;
+    }
+    else if (error == 0 && tcb->state == expect_state)
+    {
+      return 1;
+    }
+    else
+    {
+      int n = EINVAL;
+      printf("Failed to create pthread_cond_timedwait(error: %d, %d) in srt_client_connect function!\n", error, n);
+      exit(0);
+    }
+  }
+  return -1;
+}
+
+client_tcb_t *gettcb(int client_port, int server_port)
+{
+  int i;
+  client_tcb_t *tcb;
+
+  for (i = 0; i < MAX_TRANSPORT_CONNECTIONS; i++)
+  {
+    tcb = tcb_table[i];
+
+    if (tcb == NULL)
+      continue;
+
+    if (tcb->client_portNum == client_port && tcb->svr_portNum == server_port)
+    {
+      return tcb;
+    }
+  }
+
+  return NULL;
+}
+
+int check_sock(int sock_id)
+{
+  client_tcb_t *tcb;
+
+  if (sock_id > MAX_TRANSPORT_CONNECTIONS || sock_id < 0)
+  {
+    return -1;
+  }
+
+  tcb = tcb_table[sock_id];
+
+  return tcb ? 1 : -1;
+}

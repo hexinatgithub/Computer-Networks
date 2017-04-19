@@ -3,9 +3,25 @@
 #include <stdio.h>
 #include <time.h>
 #include <pthread.h>
+#include <unistd.h>
 #include "srt_server.h"
 #include "../common/constants.h"
 
+int overlay_socket = 0;
+svr_tcb_t *tcb_table[MAX_TRANSPORT_CONNECTIONS];
+pthread_mutex_t mutex;
+pthread_cond_t cond;
+
+// Use the client port and server port number to identify a tcb in tcb_table.
+svr_tcb_t *gettcb1(int server_port);
+svr_tcb_t *gettcb2(int client_port, int server_port);
+// Check socket invalid.
+int check_sock(int sock_id);
+// send connect ack segment.
+int send_connect_ack(svr_tcb_t *tcb, unsigned short int seg_type);
+// Create a close wait timeout timer.
+void close_wait_timeout(svr_tcb_t *tcb);
+void *timer_handler(void *args);
 
 /*interfaces to application layer*/
 
@@ -35,7 +51,25 @@
 // handles call connections for the client.
 //
 
-void srt_server_init(int conn) {
+void srt_server_init(int conn)
+{
+  int i;
+  pthread_t thread_id;
+
+  for (i = 0; i < MAX_TRANSPORT_CONNECTIONS; i++)
+  {
+    tcb_table[i] = NULL;
+  }
+
+  overlay_socket = conn;
+
+  i = pthread_create(&thread_id, NULL, seghandler, NULL);
+
+  if (i != 0)
+  {
+    printf("Fail to create the seghandler thread!\n");
+    exit(0);
+  }
   return;
 }
 
@@ -48,8 +82,22 @@ void srt_server_init(int conn) {
 // and be used to identify the connection on the server side. If no entry in the TCB table
 // is available the function returns -1.
 
-int srt_server_sock(unsigned int port) {
-	return 0;
+int srt_server_sock(unsigned int port)
+{
+  int i;
+
+  for (i = 0; i < MAX_TRANSPORT_CONNECTIONS; i++)
+  {
+    if (tcb_table[i] == NULL)
+    {
+      tcb_table[i] = malloc(sizeof(svr_tcb_t));
+      tcb_table[i]->state = CLOSED;
+      tcb_table[i]->svr_portNum = port;
+      return i;
+    }
+  }
+
+  return -1;
 }
 
 // Accept connection from srt client
@@ -61,8 +109,31 @@ int srt_server_sock(unsigned int port) {
 // the busy wait loop. You can implement this blocking wait in different ways, if you wish.
 //
 
-int srt_server_accept(int sockfd) {
-	return 0;
+int srt_server_accept(int sockfd)
+{
+  if (check_sock(sockfd) == -1)
+  {
+    printf("Sockfd invalid\n");
+    return -1;
+  }
+
+  svr_tcb_t *tcb;
+  int error;
+
+  tcb = tcb_table[sockfd];
+  tcb->state = LISTENING;
+
+  while (1)
+  {
+    pthread_mutex_lock(&mutex);
+    error = pthread_cond_wait(&cond, &mutex);
+    pthread_mutex_unlock(&mutex);
+
+    if (tcb->state == CONNECTED)
+      break;
+  };
+
+  return 1;
 }
 
 // Receive data from a srt client
@@ -72,8 +143,9 @@ int srt_server_accept(int sockfd) {
 // such as SYN, SYNACK, etc.flow in both directions. You do not need to implement
 // this for Lab4. We will use this in Lab5 when we implement a Go-Back-N sliding window.
 //
-int srt_server_recv(int sockfd, void* buf, unsigned int length) {
-	return 1;
+int srt_server_recv(int sockfd, void *buf, unsigned int length)
+{
+  return 1;
 }
 
 // Close the srt server
@@ -83,8 +155,26 @@ int srt_server_recv(int sockfd, void* buf, unsigned int length) {
 // if fails (i.e., in the wrong state).
 //
 
-int srt_server_close(int sockfd) {
-	return 0;
+int srt_server_close(int sockfd)
+{
+  if (check_sock(sockfd) == -1)
+  {
+    printf("Sockfd invalid\n");
+    return -1;
+  }
+
+  svr_tcb_t *tcb;
+
+  tcb = tcb_table[sockfd];
+
+  if (tcb->state == CLOSED)
+  {
+    free(tcb);
+    tcb_table[sockfd] = NULL;
+    return 1;
+  }
+
+  return -1;
 }
 
 // Thread handles incoming segments
@@ -96,6 +186,146 @@ int srt_server_close(int sockfd) {
 // actions are taken. See the client FSM for more details.
 //
 
-void *seghandler(void* arg) {
+void *seghandler(void *arg)
+{
+  int i;
+  seg_t seg;
+  svr_tcb_t *tcb;
+
+  while (snp_recvseg(overlay_socket, &seg) != -1)
+  {
+    // printf("seghandler dest:%d src:%d\n", seg.header.dest_port, seg.header.src_port);
+    tcb = gettcb2(seg.header.src_port, seg.header.dest_port);
+
+    switch (seg.header.type)
+    {
+    case SYN:
+      if (tcb == NULL)
+        tcb = gettcb1(seg.header.dest_port);
+
+      if (tcb == NULL)
+        continue;
+
+      if (tcb->state == LISTENING)
+      {
+        tcb->client_portNum = seg.header.src_port;
+        tcb->state = CONNECTED;
+        pthread_cond_broadcast(&cond);
+        send_connect_ack(tcb, SYNACK);
+      }
+      else if (tcb->state == CONNECTED)
+      {
+        send_connect_ack(tcb, SYNACK);
+      }
+      break;
+    case FIN:
+      if (tcb == NULL)
+        continue;
+
+      if (tcb->state == CONNECTED)
+      {
+        tcb->state = CLOSEWAIT;
+        send_connect_ack(tcb, FINACK);
+        close_wait_timeout(tcb);
+      }
+      else if (tcb->state == CLOSEWAIT)
+      {
+        send_connect_ack(tcb, FINACK);
+      }
+      break;
+    default:
+      break;
+    }
+  };
+
   return 0;
+}
+
+int send_connect_ack(svr_tcb_t *tcb, unsigned short int seg_type)
+{
+  seg_t seg;
+
+  seg.header.src_port = tcb->svr_portNum;
+  seg.header.dest_port = tcb->client_portNum;
+  seg.header.type = seg_type;
+  seg.header.length = 0;
+
+  return snp_sendseg(overlay_socket, &seg);
+}
+
+svr_tcb_t *gettcb1(int server_port)
+{
+  int i;
+  svr_tcb_t *tcb;
+
+  for (i = 0; i < MAX_TRANSPORT_CONNECTIONS; i++)
+  {
+    tcb = tcb_table[i];
+    if (tcb == NULL)
+      continue;
+
+    if (tcb->svr_portNum == server_port)
+    {
+      return tcb;
+    }
+  }
+
+  return NULL;
+}
+
+svr_tcb_t *gettcb2(int client_port, int server_port)
+{
+  int i;
+  svr_tcb_t *tcb;
+
+  for (i = 0; i < MAX_TRANSPORT_CONNECTIONS; i++)
+  {
+    tcb = tcb_table[i];
+    if (tcb == NULL)
+      continue;
+
+    if (tcb->client_portNum == client_port && tcb->svr_portNum == server_port)
+    {
+      return tcb;
+    }
+  }
+
+  return NULL;
+}
+
+int check_sock(int sock_id)
+{
+  svr_tcb_t *tcb;
+
+  if (sock_id > MAX_TRANSPORT_CONNECTIONS || sock_id < 0)
+  {
+    return -1;
+  }
+
+  tcb = tcb_table[sock_id];
+
+  return tcb ? 1 : -1;
+}
+
+void *timer_handler(void *args)
+{
+  sleep(CLOSEWAIT_TIME);
+  svr_tcb_t *tcb = (svr_tcb_t *)args;
+  tcb->state = CLOSED;
+
+  return NULL;
+}
+
+void close_wait_timeout(svr_tcb_t *tcb)
+{
+  pthread_t pthread_id;
+  int erron;
+
+  erron = pthread_create(&pthread_id, NULL, timer_handler, (void *)tcb);
+
+  if (erron != 0)
+  {
+    printf("close_wait_timeout create pthread failed\n");
+    exit(0);
+  }
 }
