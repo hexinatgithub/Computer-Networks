@@ -281,8 +281,8 @@ int send_and_wait_ack(seg_t *seg, client_tcb_t *tcb, unsigned int expect_state)
     pthread_mutex_lock(&mutex);
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec += 1;
-    // ts.tv_nsec += SYNSEG_TIMEOUT_NS;
+    ts.tv_sec += (ts.tv_nsec + SYNSEG_TIMEOUT_NS) / 1000000000;
+    ts.tv_nsec = (ts.tv_nsec + SYNSEG_TIMEOUT_NS) % 1000000000;
     error = pthread_cond_timedwait(&cond, &mutex, &ts);
     pthread_mutex_unlock(&mutex);
 
@@ -297,8 +297,7 @@ int send_and_wait_ack(seg_t *seg, client_tcb_t *tcb, unsigned int expect_state)
     }
     else
     {
-      int n = EINVAL;
-      printf("Failed to create pthread_cond_timedwait(error: %d, %d) in srt_client_connect function!\n", error, n);
+      printf("Failed to call pthread_cond_timedwait(errno: %d)!\n", error);
       exit(0);
     }
   }
