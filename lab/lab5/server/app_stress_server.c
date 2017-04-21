@@ -22,71 +22,93 @@
 #include "../common/constants.h"
 #include "srt_server.h"
 
-//One SRT connection is created using client port CLIENTPORT1 and server port SVRPORT1. 
+//One SRT connection is created using client port CLIENTPORT1 and server port SVRPORT1.
 #define CLIENTPORT1 87
 #define SVRPORT1 88
 //after the received file data is saved, the server waits WAITTIME seconds, and then closes the connection
 #define WAITTIME 10
 
 //this function starts the overlay by creating a direct TCP connection between the client and the server. The TCP socket descriptor is returned. If the TCP connection fails, return -1. The TCP socket desciptor returned will be used by SRT to send segments.
-int overlay_start() {
+int overlay_start()
+{
+  int tcpserv_sd;
+  struct sockaddr_in tcpserv_addr;
+  int connection;
+  struct sockaddr_in tcpclient_addr;
+  socklen_t tcpclient_addr_len;
 
-  // Your code here
+  tcpserv_sd = socket(AF_INET, SOCK_STREAM, 0);
+  if (tcpserv_sd < 0)
+    return -1;
+  memset(&tcpserv_addr, 0, sizeof(tcpserv_addr));
+  tcpserv_addr.sin_family = AF_INET;
+  tcpserv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  tcpserv_addr.sin_port = htons(OVERLAY_PORT);
 
+  if (bind(tcpserv_sd, (struct sockaddr *)&tcpserv_addr, sizeof(tcpserv_addr)) < 0)
+    return -1;
+  if (listen(tcpserv_sd, 1) < 0)
+    return -1;
+  printf("waiting for connection\n");
+  connection = accept(tcpserv_sd, (struct sockaddr *)&tcpclient_addr, &tcpclient_addr_len);
+  return connection;
 }
 
 //this function stops the overlay by closing the TCP connection between the server and the client
-void overlay_stop(int connection) {
-
-  // Your code here
-
+void overlay_stop(int connection)
+{
+  close(connection);
 }
 
-int main() {
-	//random seed for segment loss
-	srand(time(NULL));
+int main()
+{
+  //random seed for segment loss
+  srand(time(NULL));
 
-	//start overlay and get the overlay TCP socket descriptor
-	int overlay_conn = overlay_start();
-	if(overlay_conn<0) {
-		printf("can not start overlay\n");
-	}
+  //start overlay and get the overlay TCP socket descriptor
+  int overlay_conn = overlay_start();
+  if (overlay_conn < 0)
+  {
+    printf("can not start overlay\n");
+  }
 
-	//initialize srt server
-	srt_server_init(overlay_conn);
+  //initialize srt server
+  srt_server_init(overlay_conn);
 
-	//create a srt server sock at port SVRPORT1 
-	int sockfd= srt_server_sock(SVRPORT1);
-	if(sockfd<0) {
-		printf("can't create srt server\n");
-		exit(1);
-	}
-	//listen and accept connection from a srt client 
-	srt_server_accept(sockfd);
+  //create a srt server sock at port SVRPORT1
+  int sockfd = srt_server_sock(SVRPORT1);
+  if (sockfd < 0)
+  {
+    printf("can't create srt server\n");
+    exit(1);
+  }
+  //listen and accept connection from a srt client
+  srt_server_accept(sockfd);
 
-	//receive the file size first 
-	//and then receive the file data
-	int fileLen;
-	srt_server_recv(sockfd,&fileLen,sizeof(int));
-	char* buf = (char*) malloc(fileLen);
-	srt_server_recv(sockfd,buf,fileLen);
+  //receive the file size first
+  //and then receive the file data
+  int fileLen;
+  srt_server_recv(sockfd, &fileLen, sizeof(int));
+  char *buf = (char *)malloc(fileLen);
+  srt_server_recv(sockfd, buf, fileLen);
 
-	//save the received file data in receivedtext.txt
-	FILE* f;
-	f = fopen("receivedtext.txt","a");
-	fwrite(buf,fileLen,1,f);
-	fclose(f);
-	free(buf);
+  //save the received file data in receivedtext.txt
+  FILE *f;
+  f = fopen("receivedtext.txt", "w+");
+  fwrite(buf, fileLen, 1, f);
+  fclose(f);
+  free(buf);
 
-	//wait for a while
-	sleep(WAITTIME);
+  //wait for a while
+  sleep(WAITTIME);
 
-	//close srt server 
-	if(srt_server_close(sockfd)<0) {
-		printf("can't destroy srt server\n");
-		exit(1);
-	}				
+  //close srt server
+  if (srt_server_close(sockfd) < 0)
+  {
+    printf("can't destroy srt server\n");
+    exit(1);
+  }
 
-	//stop the overlay
-	overlay_stop(overlay_conn);
+  //stop the overlay
+  overlay_stop(overlay_conn);
 }

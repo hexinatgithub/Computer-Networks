@@ -13,7 +13,7 @@
 #define MAX_TRANSPORT_CONNECTIONS 10
 //Maximum segment length
 //MAX_SEG_LEN = 1500 - sizeof(seg header) - sizeof(ip header)
-#define MAX_SEG_LEN  1464
+#define MAX_SEG_LEN 1464
 //The packet loss rate is 10%
 #define PKT_LOSS_RATE 0.1
 //SYN_TIMEOUT value in nano seconds
@@ -28,10 +28,10 @@
 #define CLOSEWAIT_TIMEOUT 1
 //sendBuf_timer thread's polling interval in nanoseconds
 #define SENDBUF_POLLING_INTERVAL 100000000
-//srt client polls the receive buffer with this time interval in order 
+//srt client polls the receive buffer with this time interval in order
 //to check if requested data is available in srt_srv_recv() function
 //in seconds
-#define RECVBUF_POLLING_INTERVAL 1
+#define RECVBUF_POLLING_INTERVAL 100000000
 //srt_svr_accept() function uses this interval in nanoseconds to busy wait on the tcb state
 #define ACCEPT_POLLING_INTERVAL 100000000
 //size of receive buffer

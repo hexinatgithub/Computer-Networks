@@ -30,92 +30,129 @@
 #define WAITTIME 5
 
 //this function starts the overlay by creating a direct TCP connection between the client and the server. The TCP socket descriptor is returned. If the TCP connection fails, return -1. The TCP socket desciptor returned will be used by SRT to send segments.
-int overlay_start() {
+int overlay_start()
+{
+  int out_conn;
+  struct sockaddr_in servaddr;
+  struct hostent *hostInfo;
 
-  // Your code here.
+  char hostname_buf[50];
+  printf("Enter server name to connect:");
+  scanf("%s", hostname_buf);
 
+  hostInfo = gethostbyname(hostname_buf);
+  if (!hostInfo)
+  {
+    printf("host name error!\n");
+    return -1;
+  }
+
+  servaddr.sin_family = hostInfo->h_addrtype;
+  memcpy((char *)&servaddr.sin_addr.s_addr, hostInfo->h_addr_list[0], hostInfo->h_length);
+  servaddr.sin_port = htons(OVERLAY_PORT);
+
+  out_conn = socket(AF_INET, SOCK_STREAM, 0);
+  if (out_conn < 0)
+  {
+    return -1;
+  }
+  if (connect(out_conn, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
+    return -1;
+  return out_conn;
 }
 
 //this function stops the overlay by closing the TCP connection between the server and the client
-void overlay_stop(int overlay_conn) {
-
-  // Your code here.
-
+void overlay_stop(int overlay_conn)
+{
+  close(overlay_conn);
 }
 
-int main() {
-	//random seed for loss rate
-	srand(time(NULL));
+int main()
+{
+  //random seed for loss rate
+  srand(time(NULL));
 
-	//start overlay and get the overlay TCP socket descriptor	
-	int overlay_conn = overlay_start();
-	if(overlay_conn<0) {
-		printf("fail to start overlay\n");
-		exit(1);
-	}
+  //start overlay and get the overlay TCP socket descriptor
+  int overlay_conn = overlay_start();
+  if (overlay_conn < 0)
+  {
+    printf("fail to start overlay\n");
+    exit(1);
+  }
 
-	//initialize srt client
-	srt_client_init(overlay_conn);
+  //initialize srt client
+  srt_client_init(overlay_conn);
 
-	//create a srt client sock on port CLIENTPORT1 and connect to srt server port SVRPORT1
-	int sockfd = srt_client_sock(CLIENTPORT1);
-	if(sockfd<0) {
-		printf("fail to create srt client sock");
-		exit(1);
-	}
-	if(srt_client_connect(sockfd,SVRPORT1)<0) {
-		printf("fail to connect to srt server\n");
-		exit(1);
-	}
-	printf("client connected to server, client port:%d, server port %d\n",CLIENTPORT1,SVRPORT1);
-	
-	//create a srt client sock on port CLIENTPORT2 and connect to srt server port SVRPORT2
-	int sockfd2 = srt_client_sock(CLIENTPORT2);
-	if(sockfd2<0) {
-		printf("fail to create srt client sock");
-		exit(1);
-	}
-	if(srt_client_connect(sockfd2,SVRPORT2)<0) {
-		printf("fail to connect to srt server\n");
-		exit(1);
-	}
-	printf("client connected to server, client port:%d, server port %d\n",CLIENTPORT2, SVRPORT2);
+  //create a srt client sock on port CLIENTPORT1 and connect to srt server port SVRPORT1
+  int sockfd = srt_client_sock(CLIENTPORT1);
+  if (sockfd < 0)
+  {
+    printf("fail to create srt client sock");
+    exit(1);
+  }
+  if (srt_client_connect(sockfd, SVRPORT1) < 0)
+  {
+    printf("fail to connect to srt server\n");
+    exit(1);
+  }
+  printf("client connected to server, client port:%d, server port %d\n", CLIENTPORT1, SVRPORT1);
 
-	//send strings through the first connection
-      	char mydata[6] = "hello";
-	int i;
-	for(i=0;i<5;i++){
-      		srt_client_send(sockfd, mydata, 6);
-		printf("send string:%s to connection 1\n",mydata);	
-      	}
-	//send strings through the second connection
-      	char mydata2[7] = "byebye";
-	for(i=0;i<5;i++){
-      		srt_client_send(sockfd2, mydata2, 7);
-		printf("send string:%s to connection 2\n",mydata2);	
-      	}
+  //create a srt client sock on port CLIENTPORT2 and connect to srt server port SVRPORT2
+  int sockfd2 = srt_client_sock(CLIENTPORT2);
+  if (sockfd2 < 0)
+  {
+    printf("fail to create srt client sock");
+    exit(1);
+  }
+  if (srt_client_connect(sockfd2, SVRPORT2) < 0)
+  {
+    printf("fail to connect to srt server\n");
+    exit(1);
+  }
+  printf("client connected to server, client port:%d, server port %d\n", CLIENTPORT2, SVRPORT2);
 
-	//wait for a while and close the connections
-	sleep(WAITTIME);
+  //send strings through the first connection
+  char mydata[6] = "hello";
+  int i;
+  for (i = 0; i < 5; i++)
+  {
+    srt_client_send(sockfd, mydata, 6);
+    printf("send string:%s to connection 1\n", mydata);
+  }
+  //send strings through the second connection
+  char mydata2[7] = "byebye";
+  for (i = 0; i < 5; i++)
+  {
+    srt_client_send(sockfd2, mydata2, 7);
+    printf("send string:%s to connection 2\n", mydata2);
+  }
 
-	if(srt_client_disconnect(sockfd)<0) {
-		printf("fail to disconnect from srt server\n");
-		exit(1);
-	}
-	if(srt_client_close(sockfd)<0) {
-		printf("fail to close srt client\n");
-		exit(1);
-	}
-	
-	if(srt_client_disconnect(sockfd2)<0) {
-		printf("fail to disconnect from srt server\n");
-		exit(1);
-	}
-	if(srt_client_close(sockfd2)<0) {
-		printf("fail to close srt client\n");
-		exit(1);
-	}
+  //wait for a while and close the connections
+  sleep(WAITTIME);
 
-	//stop the overlay
-	overlay_stop(overlay_conn);
+  if (srt_client_disconnect(sockfd) < 0)
+  {
+    printf("fail to disconnect from srt server\n");
+    exit(1);
+  }
+  if (srt_client_close(sockfd) < 0)
+  {
+    printf("fail to close srt client\n");
+    exit(1);
+  }
+
+  if (srt_client_disconnect(sockfd2) < 0)
+  {
+    printf("fail to disconnect from srt server\n");
+    exit(1);
+  }
+  if (srt_client_close(sockfd2) < 0)
+  {
+    printf("fail to close srt client\n");
+    exit(1);
+  }
+
+  //stop the overlay
+  overlay_stop(overlay_conn);
+  printf("simple_client exit normal\n");
 }
