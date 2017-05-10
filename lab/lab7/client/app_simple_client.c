@@ -34,113 +34,130 @@
 #define WAITTIME 5
 
 //This function connects to the local SNP process on port NETWORK_PORT. If TCP connection fails, return -1. The TCP socket desciptor returned will be used by SRT to send segments.
-int connectToNetwork() {
-	struct sockaddr_in servaddr;
-	
-	servaddr.sin_family = AF_INET;	
-	servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-	servaddr.sin_port = htons(NETWORK_PORT);
+int connectToNetwork()
+{
+  struct sockaddr_in servaddr;
 
-	int network_conn = socket(AF_INET,SOCK_STREAM,0);  
-	if(network_conn<0)
-		return -1;
-	if(connect(network_conn, (struct sockaddr*)&servaddr, sizeof(servaddr))!=0) 
-		return -1;
+  servaddr.sin_family = AF_INET;
+  servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+  servaddr.sin_port = htons(NETWORK_PORT);
 
-	//succefully connected
-	return network_conn;
+  int network_conn = socket(AF_INET, SOCK_STREAM, 0);
+  if (network_conn < 0)
+    return -1;
+  if (connect(network_conn, (struct sockaddr *)&servaddr, sizeof(servaddr)) != 0)
+    return -1;
+
+  //succefully connected
+  return network_conn;
 }
 
-//This function disconnects from the local SNP process by closing the local TCP connection to the local SNP process. 
-void disconnectToNetwork(int network_conn) {
-	close(network_conn);
+//This function disconnects from the local SNP process by closing the local TCP connection to the local SNP process.
+void disconnectToNetwork(int network_conn)
+{
+  close(network_conn);
 }
 
-int main() {
-	//random seed for loss rate
-	srand(time(NULL));
+int main()
+{
+  //random seed for loss rate
+  srand(time(NULL));
 
-	//connect to SNP process and get the TCP socket descriptor	
-	int network_conn = connectToNetwork();
-	if(network_conn<0) {
-		printf("fail to connect to the local SNP process\n");
-		exit(1);
-	}
+  //connect to SNP process and get the TCP socket descriptor
+  int network_conn = connectToNetwork();
+  if (network_conn < 0)
+  {
+    printf("fail to connect to the local SNP process\n");
+    exit(1);
+  }
 
-	//initialize srt client
-	srt_client_init(network_conn);
-	sleep(STARTDELAY);
+  //initialize srt client
+  srt_client_init(network_conn);
+  sleep(STARTDELAY);
 
-	char hostname[50];
-	printf("Enter server name to connect:");
-	scanf("%s",hostname);
-	int svr_nodeID = topology_getNodeIDfromname(hostname);
-	if(svr_nodeID == -1) {
-		printf("host name error!\n");
-		exit(1);
-	} else {
-		printf("connecting to node %d\n",svr_nodeID);
-	}
+  char hostname[50];
+  printf("Enter server name to connect:");
+  scanf("%s", hostname);
+  int svr_nodeID = topology_getNodeIDfromname(hostname);
+  if (svr_nodeID == -1)
+  {
+    printf("host name error!\n");
+    exit(1);
+  }
+  else
+  {
+    printf("connecting to node %d\n", svr_nodeID);
+  }
 
-	//create a srt client sock on port CLIENTPORT1 and connect to srt server port SVRPORT1
-	int sockfd = srt_client_sock(CLIENTPORT1);
-	if(sockfd<0) {
-		printf("fail to create srt client sock");
-		exit(1);
-	}
-	if(srt_client_connect(sockfd,svr_nodeID,SVRPORT1)<0) {
-		printf("fail to connect to srt server\n");
-		exit(1);
-	}
-	printf("client connected to server, client port:%d, server port %d\n",CLIENTPORT1,SVRPORT1);
-	
-	//create a srt client sock on port CLIENTPORT2 and connect to srt server port SVRPORT2
-	int sockfd2 = srt_client_sock(CLIENTPORT2);
-	if(sockfd2<0) {
-		printf("fail to create srt client sock");
-		exit(1);
-	}
-	if(srt_client_connect(sockfd2,svr_nodeID,SVRPORT2)<0) {
-		printf("fail to connect to srt server\n");
-		exit(1);
-	}
-	printf("client connected to server, client port:%d, server port %d\n",CLIENTPORT2, SVRPORT2);
+  //create a srt client sock on port CLIENTPORT1 and connect to srt server port SVRPORT1
+  int sockfd = srt_client_sock(CLIENTPORT1);
+  if (sockfd < 0)
+  {
+    printf("fail to create srt client sock");
+    exit(1);
+  }
+  if (srt_client_connect(sockfd, svr_nodeID, SVRPORT1) < 0)
+  {
+    printf("fail to connect to srt server\n");
+    exit(1);
+  }
+  printf("client connected to server, client port:%d, server port %d\n", CLIENTPORT1, SVRPORT1);
 
-	//send strings through the first connection
-      	char mydata[6] = "hello";
-	int i;
-	for(i=0;i<5;i++){
-      		srt_client_send(sockfd, mydata, 6);
-		printf("send string:%s to connection 1\n",mydata);	
-      	}
-	//send strings through the second connection
-      	char mydata2[7] = "byebye";
-	for(i=0;i<5;i++){
-      		srt_client_send(sockfd2, mydata2, 7);
-		printf("send string:%s to connection 2\n",mydata2);	
-      	}
+  //create a srt client sock on port CLIENTPORT2 and connect to srt server port SVRPORT2
+  int sockfd2 = srt_client_sock(CLIENTPORT2);
+  if (sockfd2 < 0)
+  {
+    printf("fail to create srt client sock");
+    exit(1);
+  }
+  if (srt_client_connect(sockfd2, svr_nodeID, SVRPORT2) < 0)
+  {
+    printf("fail to connect to srt server\n");
+    exit(1);
+  }
+  printf("client connected to server, client port:%d, server port %d\n", CLIENTPORT2, SVRPORT2);
 
-	//wait for a while and close the connections
-	sleep(WAITTIME);
+  //send strings through the first connection
+  char mydata[6] = "hello";
+  int i;
+  for (i = 0; i < 5; i++)
+  {
+    srt_client_send(sockfd, mydata, 6);
+    printf("send string:%s to connection 1\n", mydata);
+  }
+  //send strings through the second connection
+  char mydata2[7] = "byebye";
+  for (i = 0; i < 5; i++)
+  {
+    srt_client_send(sockfd2, mydata2, 7);
+    printf("send string:%s to connection 2\n", mydata2);
+  }
 
-	if(srt_client_disconnect(sockfd)<0) {
-		printf("fail to disconnect from srt server\n");
-		exit(1);
-	}
-	if(srt_client_close(sockfd)<0) {
-		printf("fail to close srt client\n");
-		exit(1);
-	}
-	
-	if(srt_client_disconnect(sockfd2)<0) {
-		printf("fail to disconnect from srt server\n");
-		exit(1);
-	}
-	if(srt_client_close(sockfd2)<0) {
-		printf("fail to close srt client\n");
-		exit(1);
-	}
+  //wait for a while and close the connections
+  sleep(WAITTIME);
 
-	//disconnect from the SNP process
-	disconnectToNetwork(network_conn);
+  if (srt_client_disconnect(sockfd) < 0)
+  {
+    printf("fail to disconnect from srt server\n");
+    exit(1);
+  }
+  if (srt_client_close(sockfd) < 0)
+  {
+    printf("fail to close srt client\n");
+    exit(1);
+  }
+
+  if (srt_client_disconnect(sockfd2) < 0)
+  {
+    printf("fail to disconnect from srt server\n");
+    exit(1);
+  }
+  if (srt_client_close(sockfd2) < 0)
+  {
+    printf("fail to close srt client\n");
+    exit(1);
+  }
+
+  //disconnect from the SNP process
+  disconnectToNetwork(network_conn);
 }

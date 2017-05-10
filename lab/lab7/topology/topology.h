@@ -1,46 +1,79 @@
 //FILE: topology/topology.h
 //
-//Description: this file declares some help functions used to parse the topology file 
+//Description: this file declares some help functions used to parse the topology file
 //
 //Date: April 29,2008
 
-
-#ifndef TOPOLOGY_H 
+#ifndef TOPOLOGY_H
 #define TOPOLOGY_H
+#define _GNU_SOURCE
+
 #include <netdb.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <ifaddrs.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+struct allocated_array
+{
+  int *array;
+  size_t size;
+};
+
+struct allocated_IP_array
+{
+  in_addr_t *arrayIP;
+  int *arrayID;
+  size_t size;
+};
+
+#define TOPOLOGY_FILE_NAME "../topology/topology.dat"
 
 //this function returns node ID of the given hostname
 //the node ID is an integer of the last 8 digit of the node's IP address
 //for example, a node with IP address 202.120.92.3 will have node ID 3
 //if the node ID can't be retrieved, return -1
-int topology_getNodeIDfromname(char* hostname); 
+int topology_getNodeIDfromname(char *hostname);
+//this function returns node IP of the given hostname, return in ip.
+void topology_getIPfromname(char *hostname, in_addr_t *ip);
 
 //this function returns node ID from the given IP address
 //if the node ID can't be retrieved, return -1
-int topology_getNodeIDfromip(struct in_addr* addr);
+int topology_getNodeIDfromip(struct in_addr *addr);
 
 //this function returns my node ID
 //if my node ID can't be retrieved, return -1
 int topology_getMyNodeID();
+//this function returns my node IP, return in ip.
+void topology_getMyNodeIP(in_addr_t *ip);
 
 //this functions parses the topology information stored in topology.dat
 //returns the number of neighbors
-int topology_getNbrNum(); 
+int topology_getNbrNum();
 
 //this functions parses the topology information stored in topology.dat
-//returns the number of total nodes in the overlay 
+//returns the number of total nodes in the overlay
 int topology_getNodeNum();
 
 //this functions parses the topology information stored in topology.dat
-//returns a dynamically allocated array which contains all the nodes' IDs in the overlay network  
-int* topology_getNodeArray(); 
+//returns a dynamically allocated array which contains all the nodes' IDs in the overlay network
+int *topology_getNodeArray();
 
 //this functions parses the topology information stored in topology.dat
-//returns a dynamically allocated array which contains all the neighbors'IDs  
-int* topology_getNbrArray(); 
+//returns a dynamically allocated array which contains all the neighbors'IDs
+int *topology_getNbrArray();
 
 //this functions parses the topology information stored in topology.dat
-//returns the cost of the direct link between the two given nodes 
+//returns a dynamically allocated struct allocated_IP_array which contains all the neighbors'IDs and IPs
+void *topology_getNbrIPArray();
+
+//this functions parses the topology information stored in topology.dat
+//returns the cost of the direct link between the two given nodes
+//if fromNodeID == toNodeID, 0 is return,
 //if no direct link between the two given nodes, INFINITE_COST is returned
 unsigned int topology_getCost(int fromNodeID, int toNodeID);
+
 #endif

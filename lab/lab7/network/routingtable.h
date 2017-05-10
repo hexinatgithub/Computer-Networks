@@ -28,7 +28,7 @@ typedef struct routingtable {
 //
 //You can copy makehash() implementation below directly to routingtable.c:
 //int makehash(int node) {
-//	return node%MAX_ROUTINGTABLE_ENTRIES;
+//	return node%MAX_ROUTINGTABLE_SLOTS;
 //}
 //
 int makehash(int node); 

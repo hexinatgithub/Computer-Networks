@@ -31,7 +31,7 @@
 #define CLOSEWAIT_TIMEOUT 5
 //sendBuf_timer thread's polling interval in nanoseconds
 #define SENDBUF_POLLING_INTERVAL 500000000
-//srt client polls the receive buffer with this time interval in order 
+//srt client polls the receive buffer with this time interval in order
 //to check if requested data is available in srt_srv_recv() function
 //in seconds
 #define RECVBUF_POLLING_INTERVAL 1
@@ -48,26 +48,24 @@
 //overlay parameters
 /*******************************************************************/
 
-//this is port number that used for nodes to interconnect each other to form an overlay 
+//this is port number that used for nodes to interconnect each other to form an overlay
 //you should change this to a random value to avoid conflictions with other students
 #define CONNECTION_PORT 3022
 
-//this is port number that opened by overlay process. network layer process should connect to the overlay process on this port  
+//this is port number that opened by overlay process. network layer process should connect to the overlay process on this port
 //you should change this to a random value to avoid conflictions with other students
 #define OVERLAY_PORT 3522
 
 //max packet data length
-#define MAX_PKT_LEN 1488 
-
-
+#define MAX_PKT_LEN 1488
 
 /*******************************************************************/
 //network layer parameters
 /*******************************************************************/
-//max node number support by the overlay  
+//max node number support by the overlay
 #define MAX_NODE_NUM 10
 
-//max routing table slots 
+//max routing table slots
 #define MAX_ROUTINGTABLE_SLOTS 10
 
 //infinite link cost value
